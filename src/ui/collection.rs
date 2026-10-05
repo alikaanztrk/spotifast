@@ -377,6 +377,7 @@ pub struct Table<'a> {
     pub context: RowContext,
     pub show_album: bool,
     pub show_cover: bool,
+    pub show_year: bool,
     pub show_added: bool,
     pub show_added_by: bool,
     pub page: Page,
@@ -582,6 +583,7 @@ pub fn table(app: &mut App, ui: &mut egui::Ui, table: Table<'_>) {
             &palette,
             app.locale,
             table.show_album,
+            table.show_year,
             table.show_added,
             table.show_added_by,
             show_cover,
@@ -774,6 +776,7 @@ pub fn table(app: &mut App, ui: &mut egui::Ui, table: Table<'_>) {
                 context: &context,
                 show_cover,
                 show_album: table.show_album,
+                show_year: table.show_year,
                 // Rows reserve the column only where the header does.
                 added_at: added_at.as_deref().filter(|_| table.show_added),
                 added_by: added_by.as_deref(),
@@ -1126,6 +1129,18 @@ fn view_indices(items: &[TableItem], needle: &str, sort: Option<TableSort>) -> V
                     }
                 })
             }
+            SortColumn::Year => {
+                sort_by_text_key(&mut visible, sort.ascending, |index| {
+                    match &items[index].0 {
+                        PlayableItem::Track(track) => track
+                            .album
+                            .as_ref()
+                            .and_then(|album| album.release_date.clone())
+                            .unwrap_or_default(),
+                        PlayableItem::Episode(_) => String::new(),
+                    }
+                })
+            }
             SortColumn::AddedBy => sort_by_text_key(&mut visible, sort.ascending, |index| {
                 items[index].2.as_deref().unwrap_or_default().to_lowercase()
             }),
@@ -1340,6 +1355,7 @@ pub fn top_songs(app: &mut App, ui: &mut egui::Ui) {
             context: RowContext::Uris(Arc::clone(&uris)),
             show_album: true,
             show_cover: true,
+            show_year: app.settings.tracklist_year,
             show_added: false,
             show_added_by: false,
             page: Page::TopSongs,
@@ -1471,6 +1487,7 @@ pub fn playlist(app: &mut App, ui: &mut egui::Ui, id: &str) {
                     },
                     show_album: true,
                     show_cover: true,
+                    show_year: app.settings.tracklist_year,
                     // Spotify's own mixes carry no dates, or only the epoch
                     // it stamps on dates it never recorded: no column for them.
                     show_added: items.iter().any(|(_, added_at, _)| {
@@ -1591,6 +1608,7 @@ pub fn album(app: &mut App, ui: &mut egui::Ui, id: &str) {
                     },
                     show_album: false,
                     show_cover: false,
+                    show_year: false,
                     show_added: false,
                     show_added_by: false,
                     page: Page::Album(id.to_string()),
@@ -1939,6 +1957,7 @@ pub fn liked(app: &mut App, ui: &mut egui::Ui) {
             context,
             show_album: true,
             show_cover: true,
+            show_year: app.settings.tracklist_year,
             show_added: true,
             show_added_by: false,
             page: Page::LikedSongs,
@@ -2234,6 +2253,7 @@ mod tests {
                             },
                             show_album: false,
                             show_cover: false,
+                            show_year: false,
                             show_added: false,
                             show_added_by: false,
                             page: Page::Playlist("retry".into()),
@@ -2321,6 +2341,7 @@ mod tests {
                     },
                     show_album: false,
                     show_cover: false,
+                    show_year: false,
                     show_added: false,
                     show_added_by: false,
                     page: Page::Playlist("filtered".into()),
@@ -2480,6 +2501,29 @@ mod tests {
         });
         let visible = view_indices(&items, "", sort);
         assert_eq!(visible, vec![3, 2, 1, 0]);
+
+        // 6. Sort ascending by release year
+        let mut year_items = make_test_tracks();
+        for (item, year) in year_items.iter_mut().zip(["2021", "1999", "2015", "1975"]) {
+            let PlayableItem::Track(track) = &mut item.0 else {
+                panic!("test rows are tracks");
+            };
+            track.album.as_mut().unwrap().release_date = Some(year.to_string());
+        }
+        let sort = Some(TableSort {
+            column: SortColumn::Year,
+            ascending: true,
+        });
+        let visible = view_indices(&year_items, "", sort);
+        assert_eq!(visible, vec![3, 1, 2, 0]);
+
+        // 7. Sort descending by release year
+        let sort = Some(TableSort {
+            column: SortColumn::Year,
+            ascending: false,
+        });
+        let visible = view_indices(&year_items, "", sort);
+        assert_eq!(visible, vec![0, 2, 1, 3]);
     }
 
     #[test]
@@ -2711,6 +2755,7 @@ mod tests {
                                 },
                                 show_album: true,
                                 show_cover: true,
+                                show_year: false,
                                 show_added: false,
                                 show_added_by: false,
                                 page: Page::Playlist("test".into()),
